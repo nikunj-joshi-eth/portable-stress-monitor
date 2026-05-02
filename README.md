@@ -1,7 +1,7 @@
-![Python]
-![Arduino]
-![IoT]
-![MIT License]
+![Python](https://img.shields.io/badge/Python-3.x-blue)
+![Arduino](https://img.shields.io/badge/Arduino-C%2FC%2B%2B-green)
+![IoT](https://img.shields.io/badge/IoT-Embedded-orange)
+![License](https://img.shields.io/badge/License-MIT-yellow)
 
 # Portable Stress Monitoring System 🚀
 
