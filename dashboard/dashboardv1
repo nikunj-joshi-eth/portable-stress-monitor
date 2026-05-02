@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Stress Monitor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:        #080c0f;
+    --panel:     #0d1318;
+    --border:    #1a2a1a;
+    --green:     #00ff88;
+    --green-dim: #00aa55;
+    --green-glow:#00ff8855;
+    --amber:     #ffaa00;
+    --red:       #ff3355;
+    --blue:      #00aaff;
+    --text:      #c8e6c8;
+    --text-dim:  #4a6a4a;
+    --mono:      'Share Tech Mono', monospace;
+    --sans:      'Exo 2', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+    background-image:
+      radial-gradient(ellipse at 20% 50%, #001a0a22 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 20%, #001a1a22 0%, transparent 60%);
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      #00000018 2px,
+      #00000018 4px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: #0a0f0a;
+  }
+
+  .header-left h1 {
+    font-family: var(--mono);
+    font-size: 1.1rem;
+    color: var(--green);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  .header-left p {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    margin-top: 2px;
+  }
+
+  .status-dot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+  }
+
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    transition: background 0.3s;
+  }
+
+  .dot.online {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse-dot 2s infinite;
+  }
+
+  .dot.offline { background: var(--red); }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ── Main Grid ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 16px;
+    padding: 20px 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* ECG spans full width */
+  .ecg-panel {
+    grid-column: 1 / -1;
+  }
+
+  /* ── Panel base ── */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--green-dim), transparent);
+    opacity: 0.5;
+  }
+
+  .panel-label {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  /* ── BPM Panel ── */
+  .bpm-value {
+    font-family: var(--mono);
+    font-size: 4.5rem;
+    font-weight: 400;
+    color: var(--green);
+    text-shadow: 0 0 20px var(--green-glow), 0 0 40px var(--green-glow);
+    line-height: 1;
+    transition: color 0.5s;
+  }
+
+  .bpm-unit {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--green-dim);
+    letter-spacing: 0.15em;
+    margin-top: 4px;
+  }
+
+  .bpm-bar {
+    margin-top: 14px;
+    height: 3px;
+    background: #1a2a1a;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .bpm-fill {
+    height: 100%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    border-radius: 2px;
+    transition: width 0.8s ease;
+  }
+
+  .bpm-range {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--text-dim);
+  }
+
+  /* ── Stress Panel ── */
+  .stress-badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 1.6rem;
+    letter-spacing: 0.12em;
+    padding: 10px 18px;
+    border-radius: 3px;
+    transition: all 0.5s;
+    margin-top: 4px;
+  }
+
+  .stress-LOW      { color: var(--blue);  border: 1px solid var(--blue);  background: #00aaff11; text-shadow: 0 0 10px var(--blue); }
+  .stress-NORMAL   { color: var(--green); border: 1px solid var(--green); background: var(--green-glow); text-shadow: 0 0 10px var(--green); }
+  .stress-MODERATE { color: var(--amber); border: 1px solid var(--amber); background: #ffaa0011; text-shadow: 0 0 10px var(--amber); }
+  .stress-HIGH     { color: var(--red);   border: 1px solid var(--red);   background: #ff335511; text-shadow: 0 0 10px var(--red); animation: stress-flash 0.8s infinite; }
+  .stress-NO-DATA  { color: var(--text-dim); border: 1px solid #2a3a2a; background: transparent; }
+
+  @keyframes stress-flash {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  .stress-desc {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-top: 10px;
+    font-family: var(--mono);
+    letter-spacing: 0.08em;
+    min-height: 1.2em;
+  }
+
+  /* ── Env Panel ── */
+  .env-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 6px;
+  }
+
+  .env-item {}
+
+  .env-val {
+    font-family: var(--mono);
+    font-size: 2.2rem;
+    color: var(--green);
+    text-shadow: 0 0 12px var(--green-glow);
+    line-height: 1;
+    transition: color 0.5s;
+  }
+
+  .env-unit {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--green-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .env-sub {
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    margin-top: 4px;
+  }
+
+  /* ── ECG Panel ── */
+  .ecg-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+
+  .ecg-badge {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--green);
+    background: #00ff8811;
+    border: 1px solid var(--green-dim);
+    padding: 3px 8px;
+    border-radius: 2px;
+    letter-spacing: 0.12em;
+  }
+
+  .ecg-wrapper {
+    position: relative;
+    background: #060c06;
+    border: 1px solid #1a2a1a;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  /* Grid lines behind ECG */
+  .ecg-wrapper::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(#1a2a1a 1px, transparent 1px),
+      linear-gradient(90deg, #1a2a1a 1px, transparent 1px);
+    background-size: 40px 20px;
+    pointer-events: none;
+  }
+
+  canvas#ecg {
+    display: block;
+    width: 100%;
+    height: 130px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Scrolling sweep line */
+  .sweep {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 3px;
+    background: linear-gradient(90deg, transparent, #00ff8833, #00ff8811);
+    pointer-events: none;
+    z-index: 2;
+    transition: left 0.1s linear;
+  }
+
+  /* ── Timestamp ── */
+  .timestamp {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    text-align: right;
+    padding: 8px 24px 16px;
+    letter-spacing: 0.1em;
+  }
+
+  /* ── No signal overlay ── */
+  .no-signal {
+    position: absolute;
+    inset: 0;
+    background: #080c0f99;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    letter-spacing: 0.2em;
+    z-index: 10;
+    backdrop-filter: blur(2px);
+    transition: opacity 0.5s;
+  }
+
+  .no-signal.hidden { opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>&#9654; STRESS MONITOR v1.0</h1>
+    <p>ARDUINO UNO R4 MINIMA &nbsp;|&nbsp; MAX30102 + DHT11</p>
+  </div>
+  <div class="status-dot">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">CONNECTING...</span>
+  </div>
+</header>
+
+<div class="grid">
+
+  <!-- ECG -->
+  <div class="panel ecg-panel">
+    <div class="ecg-header">
+      <div>
+        <div class="panel-label">ECG WAVEFORM</div>
+      </div>
+      <div class="ecg-badge" id="ecgLabel">&#9679; LIVE</div>
+    </div>
+    <div class="ecg-wrapper">
+      <canvas id="ecg"></canvas>
+      <div class="sweep" id="sweep"></div>
+      <div class="no-signal" id="noSignal">NO FINGER DETECTED</div>
+    </div>
+  </div>
+
+  <!-- BPM -->
+  <div class="panel">
+    <div class="panel-label">Heart Rate</div>
+    <div class="bpm-value" id="bpmVal">--</div>
+    <div class="bpm-unit">BEATS PER MINUTE</div>
+    <div class="bpm-bar">
+      <div class="bpm-fill" id="bpmFill" style="width:0%"></div>
+    </div>
+    <div class="bpm-range"><span>40</span><span>75</span><span>90</span><span>110</span><span>180</span></div>
+  </div>
+
+  <!-- Stress -->
+  <div class="panel">
+    <div class="panel-label">Stress Level</div>
+    <div class="stress-badge stress-NO-DATA" id="stressBadge">NO DATA</div>
+    <div class="stress-desc" id="stressDesc">Place finger on sensor</div>
+  </div>
+
+  <!-- Environment -->
+  <div class="panel">
+    <div class="panel-label">Environment</div>
+    <div class="env-grid">
+      <div class="env-item">
+        <div class="env-val" id="tempVal">--</div>
+        <div class="env-unit">&deg;C &nbsp;TEMP</div>
+        <div class="env-sub" id="tempSub">--</div>
+      </div>
+      <div class="env-item">
+        <div class="env-val" id="humVal">--</div>
+        <div class="env-unit">% &nbsp;HUMIDITY</div>
+        <div class="env-sub" id="humSub">--</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="timestamp" id="timestamp">--:--:--</div>
+
+<script>
+// ── Socket.IO ──────────────────────────────────────────
+const socket = io();
+
+// ── ECG Canvas ────────────────────────────────────────
+const canvas  = document.getElementById('ecg');
+const ctx     = canvas.getContext('2d');
+const ECG_HISTORY = 400;   // number of samples to display
+let ecgData   = new Array(ECG_HISTORY).fill(0);
+let writeHead = 0;
+let canvasW   = 0, canvasH = 0;
+
+function resizeCanvas() {
+  canvasW = canvas.offsetWidth;
+  canvasH = canvas.offsetHeight;
+  canvas.width  = canvasW;
+  canvas.height = canvasH;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// ── PQRST synthetic waveform ──────────────────────────
+// Same shape as Arduino, generated client-side from BPM
+const PQRST = [
+  0,0,0,0,0,
+  0.08,0.15,0.20,0.15,0.08,
+  0,0,0,0,
+  -0.10,-0.20,
+  0.50,0.85,1.00,0.85,0.50,
+  -0.25,-0.15,
+  0,0,0,
+  0.08,0.18,0.28,0.30,0.28,0.18,0.08,
+  0,0,0,0,0,0,0,0
+];
+const PQRST_LEN = PQRST.length;
+
+let pqrstIndex = 0;
+let currentBPM = 0;
+let lastECGTime = performance.now();
+
+// ── ECG generator (runs independently at ~60fps) ──────
+function generateECGSample(now) {
+  const dt = now - lastECGTime;
+  lastECGTime = now;
+
+  if (currentBPM <= 0) {
+    ecgData[writeHead] = 0;
+    writeHead = (writeHead + 1) % ECG_HISTORY;
+    return;
+  }
+
+  // How many PQRST samples per ms
+  const samplesPerBeat = (60000 / currentBPM) / PQRST_LEN;
+  const step = dt / samplesPerBeat;
+
+  const idx = Math.floor(pqrstIndex) % PQRST_LEN;
+  ecgData[writeHead] = PQRST[idx];
+  writeHead = (writeHead + 1) % ECG_HISTORY;
+
+  pqrstIndex += step;
+  if (pqrstIndex >= PQRST_LEN) pqrstIndex -= PQRST_LEN;
+}
+
+// ── Draw ECG ──────────────────────────────────────────
+function drawECG() {
+  ctx.clearRect(0, 0, canvasW, canvasH);
+
+  const mid = canvasH / 2;
+  const amp = canvasH * 0.38;
+  const xStep = canvasW / ECG_HISTORY;
+
+  // Glow effect — draw twice, wider then sharp
+  ctx.shadowColor = '#00ff88';
+  ctx.shadowBlur  = 8;
+
+  ctx.beginPath();
+  ctx.strokeStyle = '#00ff88';
+  ctx.lineWidth   = 1.5;
+  ctx.lineJoin    = 'round';
+
+  for (let i = 0; i < ECG_HISTORY; i++) {
+    const bufIdx = (writeHead + i) % ECG_HISTORY;
+    const x = i * xStep;
+    const y = mid - ecgData[bufIdx] * amp;
+
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Move sweep indicator
+  const sweepPct = (writeHead / ECG_HISTORY) * 100;
+  document.getElementById('sweep').style.left = sweepPct + '%';
+}
+
+// ── Render loop ───────────────────────────────────────
+function render(now) {
+  generateECGSample(now);
+  drawECG();
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+// ── Socket data handler ───────────────────────────────
+const stressDescriptions = {
+  'NO DATA':  'Place finger on sensor',
+  'LOW':      'Relaxed — BPM below 75',
+  'NORMAL':   'Normal range — 75 to 90 BPM',
+  'MODERATE': 'Elevated — 90 to 110 BPM',
+  'HIGH':     'High stress — BPM above 110'
+};
+
+socket.on('sensor_data', (data) => {
+  currentBPM = data.bpm || 0;
+
+  // ── BPM
+  const bpmEl   = document.getElementById('bpmVal');
+  const bpmFill = document.getElementById('bpmFill');
+  if (currentBPM > 0) {
+    bpmEl.textContent = currentBPM;
+    const pct = Math.min(((currentBPM - 40) / (180 - 40)) * 100, 100);
+    bpmFill.style.width = pct + '%';
+
+    // Color BPM by zone
+    if (currentBPM > 110)     { bpmEl.style.color = 'var(--red)';   bpmFill.style.background = 'var(--red)'; }
+    else if (currentBPM > 90) { bpmEl.style.color = 'var(--amber)'; bpmFill.style.background = 'var(--amber)'; }
+    else                      { bpmEl.style.color = 'var(--green)'; bpmFill.style.background = 'var(--green)'; }
+  } else {
+    bpmEl.textContent = '--';
+    bpmFill.style.width = '0%';
+    bpmEl.style.color = 'var(--green)';
+  }
+
+  // ── No signal overlay
+  const noSig = document.getElementById('noSignal');
+  if (currentBPM > 0) noSig.classList.add('hidden');
+  else noSig.classList.remove('hidden');
+
+  // ── Stress
+  const stress     = data.stress || 'NO DATA';
+  const badge      = document.getElementById('stressBadge');
+  const stressDesc = document.getElementById('stressDesc');
+  const key        = stress.replace(' ', '-');
+  badge.textContent = stress;
+  badge.className  = 'stress-badge stress-' + key;
+  stressDesc.textContent = stressDescriptions[stress] || '';
+
+  // ── Temperature
+  const tempEl  = document.getElementById('tempVal');
+  const tempSub = document.getElementById('tempSub');
+  if (data.temp > 0) {
+    tempEl.textContent = data.temp.toFixed(1);
+    if (data.temp > 30) {
+      tempEl.style.color = 'var(--amber)';
+      tempSub.textContent = 'ELEVATED';
+    } else {
+      tempEl.style.color = 'var(--green)';
+      tempSub.textContent = 'NORMAL';
+    }
+  } else {
+    tempEl.textContent = '--';
+    tempSub.textContent = '--';
+  }
+
+  // ── Humidity
+  const humEl  = document.getElementById('humVal');
+  const humSub = document.getElementById('humSub');
+  if (data.hum > 0) {
+    humEl.textContent = data.hum;
+    if (data.hum > 70) {
+      humEl.style.color = 'var(--amber)';
+      humSub.textContent = 'HIGH';
+    } else {
+      humEl.style.color = 'var(--green)';
+      humSub.textContent = 'NORMAL';
+    }
+  } else {
+    humEl.textContent = '--';
+    humSub.textContent = '--';
+  }
+
+  // ── Connection status
+  const dot     = document.getElementById('statusDot');
+  const statTxt = document.getElementById('statusText');
+  if (data.connected) {
+    dot.className  = 'dot online';
+    statTxt.textContent = 'CONNECTED';
+  } else {
+    dot.className  = 'dot offline';
+    statTxt.textContent = 'DISCONNECTED';
+  }
+
+  // ── Timestamp
+  document.getElementById('timestamp').textContent =
+    'LAST UPDATE: ' + new Date().toLocaleTimeString();
+});
+
+socket.on('disconnect', () => {
+  document.getElementById('statusDot').className = 'dot offline';
+  document.getElementById('statusText').textContent = 'DISCONNECTED';
+});
+</script>
+</body>
+</html>
