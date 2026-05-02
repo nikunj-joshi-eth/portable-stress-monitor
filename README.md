@@ -1,3 +1,8 @@
+![Python]
+![Arduino]
+![IoT]
+![MIT License]
+
 # Portable Stress Monitoring System 🚀
 
 A smart healthcare and IoT-based embedded system designed to monitor physiological indicators related to stress in real time.
