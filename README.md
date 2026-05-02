@@ -1,25 +1,29 @@
 # Portable Stress Monitoring System 🚀
 
-A smart portable healthcare monitoring system built using Raspberry Pi Pico, MAX30102 sensor, and MicroPython to monitor heart rate and blood oxygen (SpO₂) levels in real time for stress-related physiological analysis.
+A smart healthcare and IoT-based embedded system designed to monitor physiological indicators related to stress in real time.
+
+This project uses Raspberry Pi Pico, Arduino-compatible firmware, MAX30102 sensor, OLED display, and cloud/dashboard integration to collect, process, and visualize biometric data such as heart rate and blood oxygen (SpO₂).
 
 ---
 
 ## 📌 Overview
 
-Stress has become a major health concern in modern life. This project aims to create an affordable, portable, and real-time monitoring system capable of tracking important physiological parameters that may indicate stress levels.
+Stress has become one of the major health challenges in modern life. The goal of this project is to develop an affordable, portable, and real-time monitoring system capable of tracking physiological signals that may indicate stress levels.
 
-The device collects live biometric data, processes it using Raspberry Pi Pico, and displays readings instantly on an OLED display.
+The system collects biometric data using sensors, processes the readings through embedded hardware, and displays or transmits the data to dashboards for monitoring and analysis.
 
 ---
 
 ## ✨ Features
 
 ✅ Real-time Heart Rate Monitoring  
-✅ SpO₂ (Blood Oxygen) Measurement  
-✅ Live OLED Display Output  
+✅ SpO₂ (Blood Oxygen) Monitoring  
+✅ OLED Live Display  
+✅ Cross-Platform Firmware Support  
+✅ IoT Dashboard Integration  
+✅ Server-side Data Processing  
 ✅ Portable and Low-Cost Design  
-✅ I2C-Based Sensor Communication  
-✅ Embedded System Implementation  
+✅ Embedded + Cloud Architecture  
 
 ---
 
@@ -28,27 +32,21 @@ The device collects live biometric data, processes it using Raspberry Pi Pico, a
 - Raspberry Pi Pico
 - MAX30102 Pulse Oximeter Sensor
 - OLED Display
+- Arduino-compatible Board
 - Breadboard
 - Jumper Wires
 - Power Supply
 
 ---
 
-## 💻 Software Used
+## 💻 Software & Technologies
 
 - MicroPython
-- Thonny IDE
-- I2C Communication Protocol
-
----
-
-## ⚙ Working Principle
-
-1. The MAX30102 sensor collects pulse and SpO₂ data.  
-2. Raspberry Pi Pico processes the sensor readings.  
-3. Data is filtered and analyzed in real time.  
-4. Processed readings are displayed on the OLED screen.  
-5. The system helps monitor physiological indicators related to stress.
+- Arduino C/C++
+- Python
+- MQTT Protocol
+- I2C Communication
+- IoT Dashboard Integration
 
 ---
 
@@ -57,41 +55,99 @@ The device collects live biometric data, processes it using Raspberry Pi Pico, a
 ```bash
 portable-stress-monitor/
 │
+├── firmware/
+│   ├── pico_micropython/
+│   └── arduino/
+│
+├── server/
+│
+├── dashboard/
+│   ├── prototype-v1/
+│   ├── prototype-v2/
+│   └── final-dashboard/
+│
+├── docs/
+│
+├── screenshots/
+│
+├── media/
+│
 ├── README.md
 ├── LICENSE
 ├── .gitignore
-├── src/
-│   └── main.py
-├── docs/
-├── images/
-└── media/
+└── requirements.txt
 ```
+
+---
+
+## ⚙ Working Principle
+
+### 1. Data Acquisition
+The MAX30102 sensor collects pulse and oxygen saturation data.
+
+### 2. Embedded Processing
+Raspberry Pi Pico / Arduino processes the raw sensor values.
+
+### 3. Communication
+Data is transmitted using I2C and IoT communication protocols.
+
+### 4. Visualization
+Live readings are displayed on OLED screens and dashboards.
+
+### 5. Analysis
+Collected data can be monitored for stress-related physiological trends.
 
 ---
 
 ## 🧠 Challenges Faced
 
 - Sensor calibration
-- Noisy signal filtering
+- Signal noise filtering
 - Stable I2C communication
-- Real-time data processing
-- Debugging hardware connections
+- Real-time data synchronization
+- Embedded debugging
+- Dashboard integration
 
 ---
 
 ## 🚀 Future Improvements
 
-- Stress score calculation
-- Mobile app connectivity
-- Cloud data logging
-- AI-based health analysis
+- AI-based stress prediction
+- Mobile application integration
+- Cloud database logging
 - Battery optimization
+- Wearable implementation
+
+---
+
+## 📚 Learning Outcomes
+
+This project helped in understanding:
+
+- Embedded systems
+- Sensor interfacing
+- Microcontroller programming
+- IoT communication
+- Real-time data visualization
+- Hardware debugging
+
+---
+
+## 🤝 Contributions
+
+Contributions, suggestions, and feedback are welcome.
 
 ---
 
 ## 👨‍💻 Author
 
 Nikunj Joshi
-B.Tech Student | Embedded Systems | IoT Enthusiast
+B.Tech Student | Embedded Systems | IoT | Problem Solver
 
-Connect on LinkedIn.
+LinkedIn: https://www.linkedin.com/in/nikunj-joshi-83390235a/
+
+---
+
+## ⭐ Support
+
+If you found this project useful, consider starring the repository.
