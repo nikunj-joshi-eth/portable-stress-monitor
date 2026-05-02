@@ -1,0 +1,26 @@
+# Setup Guide
+
+## Required Software
+
+- Python 3.x
+- Arduino IDE
+- Thonny IDE
+
+ ##for an external server
+- Git
+- MQTT Broker
+
+## Install Python Dependencies
+
+```bash
+pip install flask paho-mqtt
+pip install flask flask-socketio eventlet
+```
+
+## Hardware
+
+- Raspberry Pi Pico
+- Arduino Board
+- MAX30102 Sensor
+- OLED Display
+```
