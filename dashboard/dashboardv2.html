@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Stress Monitor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;800&display=swap" rel="stylesheet"/>
+<style>
+/* ── THEME VARIABLES ─────────────────────────────── */
+:root {
+  --bg:          #080c0f;
+  --panel:       #0d1318;
+  --border:      #1a2a1a;
+  --green:       #00ff88;
+  --green-dim:   #00aa55;
+  --green-glow:  #00ff8844;
+  --amber:       #ffaa00;
+  --red:         #ff3355;
+  --blue:        #00aaff;
+  --text:        #c8e6c8;
+  --text-dim:    #4a6a4a;
+  --mono:        'Share Tech Mono', monospace;
+  --sans:        'Exo 2', sans-serif;
+  --header-bg:   #0a0f0a;
+  --ecg-bg:      #060c06;
+}
+
+[data-theme="light"] {
+  --bg:         #f0f4f0;
+  --panel:      #ffffff;
+  --border:     #c8dac8;
+  --green:      #00884a;
+  --green-dim:  #006633;
+  --green-glow: #00884422;
+  --amber:      #cc8800;
+  --red:        #cc1133;
+  --blue:       #0066cc;
+  --text:       #1a2a1a;
+  --text-dim:   #6a8a6a;
+  --header-bg:  #e0ece0;
+  --ecg-bg:     #f8fdf8;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+  transition: background 0.4s, color 0.4s;
+}
+
+[data-theme="dark"] body {
+  background-image:
+    radial-gradient(ellipse at 20% 50%, #001a0a22 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, #001a1a22 0%, transparent 60%);
+}
+
+[data-theme="dark"] body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, #00000018 2px, #00000018 4px);
+  pointer-events: none; z-index: 1;
+}
+
+/* ── HEADER ─────────────────────────────────────── */
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--border);
+  background: var(--header-bg);
+  position: sticky; top: 0; z-index: 50;
+  transition: background 0.4s;
+  flex-wrap: wrap; gap: 10px;
+}
+
+.header-left h1 {
+  font-family: var(--mono);
+  font-size: 1rem;
+  color: var(--green);
+  letter-spacing: 0.15em;
+}
+
+.header-left p {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+  margin-top: 2px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Clock + session */
+.header-clock {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--green);
+  letter-spacing: 0.1em;
+  text-align: right;
+}
+
+.header-clock span {
+  display: block;
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+/* Icon buttons */
+.icon-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  padding: 6px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.icon-btn:hover {
+  border-color: var(--green);
+  color: var(--green);
+  box-shadow: 0 0 8px var(--green-glow);
+}
+
+.status-dot {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 0.7rem;
+  letter-spacing: 0.1em;
+}
+
+.dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-dim); transition: background 0.3s;
+}
+.dot.online  { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse-dot 2s infinite; }
+.dot.offline { background: var(--red); }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ── MAIN GRID ───────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+  padding: 18px 22px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.ecg-panel     { grid-column: 1 / -1; }
+.history-panel { grid-column: 1 / -1; }
+
+/* ── PANEL BASE ──────────────────────────────────── */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 18px 22px;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.4s, border-color 0.4s;
+}
+
+[data-theme="dark"] .panel::before {
+  content: '';
+  position: absolute; top:0; left:0; right:0; height:1px;
+  background: linear-gradient(90deg, transparent, var(--green-dim), transparent);
+  opacity: 0.4;
+}
+
+.panel-label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* ── BPM ─────────────────────────────────────────── */
+.bpm-value {
+  font-family: var(--mono);
+  font-size: 4rem;
+  color: var(--green);
+  text-shadow: 0 0 20px var(--green-glow);
+  line-height: 1;
+  transition: color 0.4s;
+}
+.bpm-unit { font-family: var(--mono); font-size: 0.75rem; color: var(--green-dim); letter-spacing: 0.15em; margin-top: 4px; }
+.bpm-bar  { margin-top: 12px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.bpm-fill { height:100%; background: var(--green); box-shadow: 0 0 8px var(--green); border-radius: 2px; transition: width 0.8s ease, background 0.4s; }
+.bpm-range { display:flex; justify-content:space-between; margin-top:4px; font-family:var(--mono); font-size:0.55rem; color:var(--text-dim); }
+
+/* ── STRESS ──────────────────────────────────────── */
+.stress-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  letter-spacing: 0.12em;
+  padding: 9px 16px;
+  border-radius: 3px;
+  transition: all 0.5s;
+  margin-top: 4px;
+}
+.stress-LOW      { color:var(--blue);  border:1px solid var(--blue);  background:#00aaff11; text-shadow:0 0 10px var(--blue); }
+.stress-NORMAL   { color:var(--green); border:1px solid var(--green); background:var(--green-glow); text-shadow:0 0 10px var(--green); }
+.stress-MODERATE { color:var(--amber); border:1px solid var(--amber); background:#ffaa0011; text-shadow:0 0 10px var(--amber); }
+.stress-HIGH     { color:var(--red);   border:1px solid var(--red);   background:#ff335511; text-shadow:0 0 10px var(--red); animation:stress-flash 0.8s infinite; }
+.stress-NO-DATA  { color:var(--text-dim); border:1px solid var(--border); background:transparent; }
+@keyframes stress-flash { 0%,100%{opacity:1} 50%{opacity:.55} }
+.stress-desc { font-size:0.65rem; color:var(--text-dim); margin-top:10px; font-family:var(--mono); letter-spacing:0.08em; min-height:1.2em; }
+
+/* ── ENV ─────────────────────────────────────────── */
+.env-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:6px; }
+.env-val  { font-family:var(--mono); font-size:2rem; color:var(--green); text-shadow:0 0 12px var(--green-glow); line-height:1; transition:color 0.4s; }
+.env-unit { font-family:var(--mono); font-size:0.65rem; color:var(--green-dim); letter-spacing:0.1em; }
+.env-sub  { font-size:0.6rem; color:var(--text-dim); font-family:var(--mono); margin-top:3px; }
+
+/* ── ECG ─────────────────────────────────────────── */
+.ecg-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
+.ecg-badge  { font-family:var(--mono); font-size:0.6rem; color:var(--green); background:var(--green-glow); border:1px solid var(--green-dim); padding:3px 8px; border-radius:2px; letter-spacing:0.12em; }
+.ecg-wrapper { position:relative; background:var(--ecg-bg); border:1px solid var(--border); border-radius:3px; overflow:hidden; transition:background 0.4s; }
+.ecg-wrapper::before {
+  content:''; position:absolute; inset:0;
+  background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 40px 20px; pointer-events:none; opacity:0.6;
+}
+canvas#ecg { display:block; width:100%; height:130px; position:relative; z-index:1; }
+.sweep { position:absolute; top:0; bottom:0; width:3px; background:linear-gradient(90deg, transparent, #00ff8833, #00ff8811); pointer-events:none; z-index:2; transition:left 0.1s linear; }
+.no-signal { position:absolute; inset:0; background:#080c0faa; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:0.75rem; color:var(--text-dim); letter-spacing:0.2em; z-index:10; backdrop-filter:blur(2px); transition:opacity 0.5s; }
+.no-signal.hidden { opacity:0; pointer-events:none; }
+
+/* ── HISTORY CHART ───────────────────────────────── */
+.history-wrapper { position:relative; height:160px; }
+
+/* ── ALERT POPUP ─────────────────────────────────── */
+.alert-overlay {
+  position: fixed; inset: 0;
+  background: #00000088;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s;
+  backdrop-filter: blur(4px);
+}
+.alert-overlay.visible { opacity: 1; pointer-events: all; }
+
+.alert-box {
+  background: var(--panel);
+  border: 2px solid var(--red);
+  border-radius: 6px;
+  padding: 36px 44px;
+  text-align: center;
+  box-shadow: 0 0 40px #ff335544;
+  animation: alert-pulse 0.8s infinite;
+  max-width: 420px; width: 90%;
+}
+@keyframes alert-pulse { 0%,100%{box-shadow:0 0 40px #ff335544} 50%{box-shadow:0 0 80px #ff335588} }
+
+.alert-box h2 {
+  font-family: var(--mono);
+  font-size: 1.3rem;
+  color: var(--red);
+  letter-spacing: 0.2em;
+  margin-bottom: 10px;
+}
+.alert-box p {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+.alert-btn {
+  background: none;
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  padding: 10px 24px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.alert-btn:hover { background: var(--red); color: #fff; }
+
+/* ── BREATHING GUIDE ─────────────────────────────── */
+.breathing-panel {
+  display: none;
+  position: fixed;
+  bottom: 24px; right: 24px;
+  z-index: 150;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px 24px;
+  width: 200px;
+  text-align: center;
+  box-shadow: 0 8px 32px #00000044;
+}
+.breathing-panel.visible { display: block; }
+
+.breathing-title {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  letter-spacing: 0.2em;
+  margin-bottom: 14px;
+}
+
+.breath-circle {
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  border: 2px solid var(--blue);
+  margin: 0 auto 12px;
+  box-shadow: 0 0 16px #00aaff44;
+  animation: breath-idle 1s ease infinite;
+  transition: animation 0s;
+}
+.breath-circle.inhale  { animation: breath-in  4s ease-in-out infinite; }
+.breath-circle.hold    { animation: breath-hold 4s ease infinite; }
+.breath-circle.exhale  { animation: breath-out  4s ease-in-out infinite; }
+
+@keyframes breath-idle { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
+@keyframes breath-in   { 0%{transform:scale(0.7);opacity:.5} 100%{transform:scale(1.3);opacity:1} }
+@keyframes breath-hold { 0%,100%{transform:scale(1.3);opacity:1} }
+@keyframes breath-out  { 0%{transform:scale(1.3);opacity:1} 100%{transform:scale(0.7);opacity:.5} }
+
+.breath-instruction {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--blue);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+.breath-count {
+  font-family: var(--mono);
+  font-size: 1.4rem;
+  color: var(--text);
+  margin-top: 4px;
+}
+.breath-close {
+  margin-top: 12px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+.breath-close:hover { color: var(--text); }
+
+/* ── FULLSCREEN MODE ─────────────────────────────── */
+:fullscreen body, :-webkit-full-screen body {
+  overflow-y: auto;
+}
+
+/* ── TIMESTAMP ───────────────────────────────────── */
+.timestamp {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  text-align: right;
+  padding: 6px 22px 18px;
+  letter-spacing: 0.1em;
+}
+</style>
+</head>
+<body>
+
+<!-- ── ALERT POPUP ──────────────────────────── -->
+<div class="alert-overlay" id="alertOverlay">
+  <div class="alert-box">
+    <h2>⚠ HIGH STRESS</h2>
+    <p>Heart rate has exceeded 110 BPM.<br>Consider pausing and taking a moment to breathe.</p>
+    <button class="alert-btn" id="alertDismiss">DISMISS &amp; OPEN BREATHING GUIDE</button>
+  </div>
+</div>
+
+<!-- ── BREATHING GUIDE ──────────────────────── -->
+<div class="breathing-panel" id="breathingPanel">
+  <div class="breathing-title">BOX BREATHING</div>
+  <div class="breath-circle" id="breathCircle"></div>
+  <div class="breath-instruction" id="breathInstruction">INHALE</div>
+  <div class="breath-count" id="breathCount">4</div>
+  <button class="breath-close" id="breathClose">✕ CLOSE</button>
+</div>
+
+<!-- ── HEADER ───────────────────────────────── -->
+<header>
+  <div class="header-left">
+    <h1>▶ STRESS MONITOR v2.0</h1>
+    <p>ARDUINO UNO R4 MINIMA &nbsp;|&nbsp; MAX30102 + DHT11</p>
+  </div>
+  <div class="header-right">
+    <div class="header-clock">
+      <div id="liveClock">--:--:--</div>
+      <span>SESSION &nbsp;<span id="sessionTimer">00:00</span></span>
+    </div>
+    <button class="icon-btn" id="themeBtn">☀ LIGHT MODE</button>
+    <button class="icon-btn" id="breathBtn">❤ BREATHE</button>
+    <button class="icon-btn" id="fullscreenBtn">⛶ FULLSCREEN</button>
+    <div class="status-dot">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">CONNECTING...</span>
+    </div>
+  </div>
+</header>
+
+<!-- ── MAIN GRID ─────────────────────────────── -->
+<div class="grid">
+
+  <!-- ECG -->
+  <div class="panel ecg-panel">
+    <div class="ecg-header">
+      <div>
+        <div class="panel-label">ECG WAVEFORM — SYNTHETIC PQRST</div>
+      </div>
+      <div class="ecg-badge" id="ecgLabel">● LIVE</div>
+    </div>
+    <div class="ecg-wrapper">
+      <canvas id="ecg"></canvas>
+      <div class="sweep" id="sweep"></div>
+      <div class="no-signal" id="noSignal">NO FINGER DETECTED</div>
+    </div>
+  </div>
+
+  <!-- BPM -->
+  <div class="panel">
+    <div class="panel-label">Heart Rate</div>
+    <div class="bpm-value" id="bpmVal">--</div>
+    <div class="bpm-unit">BEATS PER MINUTE</div>
+    <div class="bpm-bar"><div class="bpm-fill" id="bpmFill" style="width:0%"></div></div>
+    <div class="bpm-range"><span>40</span><span>75</span><span>90</span><span>110</span><span>180</span></div>
+  </div>
+
+  <!-- Stress -->
+  <div class="panel">
+    <div class="panel-label">Stress Level</div>
+    <div class="stress-badge stress-NO-DATA" id="stressBadge">NO DATA</div>
+    <div class="stress-desc" id="stressDesc">Place finger on sensor</div>
+  </div>
+
+  <!-- Env -->
+  <div class="panel">
+    <div class="panel-label">Environment</div>
+    <div class="env-grid">
+      <div>
+        <div class="env-val" id="tempVal">--</div>
+        <div class="env-unit">°C &nbsp;TEMP</div>
+        <div class="env-sub" id="tempSub">--</div>
+      </div>
+      <div>
+        <div class="env-val" id="humVal">--</div>
+        <div class="env-unit">% &nbsp;HUMIDITY</div>
+        <div class="env-sub" id="humSub">--</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BPM History Chart -->
+  <div class="panel history-panel">
+    <div class="panel-label">BPM History — Last 60 Seconds</div>
+    <div class="history-wrapper">
+      <canvas id="historyChart"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<div class="timestamp" id="timestamp">--:--:--</div>
+
+<!-- ── SCRIPTS ───────────────────────────────── -->
+<script>
+// ── Socket ───────────────────────────────────────────
+const socket = io();
+
+// ── ECG Canvas ───────────────────────────────────────
+const canvas = document.getElementById('ecg');
+const ctx    = canvas.getContext('2d');
+const ECG_HISTORY = 400;
+let ecgData   = new Array(ECG_HISTORY).fill(0);
+let writeHead = 0;
+let canvasW = 0, canvasH = 0;
+
+function resizeCanvas() {
+  canvasW = canvas.offsetWidth;
+  canvasH = canvas.offsetHeight;
+  canvas.width  = canvasW;
+  canvas.height = canvasH;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+const PQRST = [
+  0,0,0,0,0,
+  0.08,0.15,0.20,0.15,0.08,
+  0,0,0,0,
+  -0.10,-0.20,
+  0.50,0.85,1.00,0.85,0.50,
+  -0.25,-0.15,
+  0,0,0,
+  0.08,0.18,0.28,0.30,0.28,0.18,0.08,
+  0,0,0,0,0,0,0,0
+];
+const PQRST_LEN = PQRST.length;
+let pqrstIndex = 0;
+let currentBPM = 0;
+let lastECGTime = performance.now();
+
+function generateECGSample(now) {
+  const dt = now - lastECGTime;
+  lastECGTime = now;
+  if (currentBPM <= 0) {
+    ecgData[writeHead] = 0;
+    writeHead = (writeHead + 1) % ECG_HISTORY;
+    return;
+  }
+  const samplesPerBeat = (60000 / currentBPM) / PQRST_LEN;
+  const step = dt / samplesPerBeat;
+  const idx = Math.floor(pqrstIndex) % PQRST_LEN;
+  ecgData[writeHead] = PQRST[idx];
+  writeHead = (writeHead + 1) % ECG_HISTORY;
+  pqrstIndex += step;
+  if (pqrstIndex >= PQRST_LEN) pqrstIndex -= PQRST_LEN;
+}
+
+function drawECG() {
+  ctx.clearRect(0, 0, canvasW, canvasH);
+  const mid   = canvasH / 2;
+  const amp   = canvasH * 0.38;
+  const xStep = canvasW / ECG_HISTORY;
+  ctx.shadowColor = getComputedStyle(document.documentElement).getPropertyValue('--green').trim();
+  ctx.shadowBlur  = 8;
+  ctx.beginPath();
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--green').trim();
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin  = 'round';
+  for (let i = 0; i < ECG_HISTORY; i++) {
+    const bufIdx = (writeHead + i) % ECG_HISTORY;
+    const x = i * xStep;
+    const y = mid - ecgData[bufIdx] * amp;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  const sweepPct = (writeHead / ECG_HISTORY) * 100;
+  document.getElementById('sweep').style.left = sweepPct + '%';
+}
+
+function render(now) {
+  generateECGSample(now);
+  drawECG();
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+// ── History Chart ─────────────────────────────────────
+const MAX_HISTORY = 60;
+const histLabels = [];
+const histData   = [];
+
+const histCtx = document.getElementById('historyChart').getContext('2d');
+const histChart = new Chart(histCtx, {
+  type: 'line',
+  data: {
+    labels: histLabels,
+    datasets: [{
+      label: 'BPM',
+      data: histData,
+      borderColor: '#00ff88',
+      backgroundColor: 'rgba(0,255,136,0.06)',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0.4,
+      fill: true,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 300 },
+    scales: {
+      x: {
+        ticks: { color: '#4a6a4a', font: { family: 'Share Tech Mono', size: 9 }, maxTicksLimit: 8 },
+        grid:  { color: '#1a2a1a' },
+        border:{ color: '#1a2a1a' }
+      },
+      y: {
+        min: 40, max: 180,
+        ticks: { color: '#4a6a4a', font: { family: 'Share Tech Mono', size: 9 }, stepSize: 20 },
+        grid:  { color: '#1a2a1a' },
+        border:{ color: '#1a2a1a' }
+      }
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0d1318',
+        borderColor: '#1a2a1a',
+        borderWidth: 1,
+        titleColor: '#00ff88',
+        bodyColor: '#c8e6c8',
+        titleFont: { family: 'Share Tech Mono' },
+        bodyFont:  { family: 'Share Tech Mono' },
+      }
+    }
+  }
+});
+
+function pushHistory(bpm) {
+  if (bpm <= 0) return;
+  const now = new Date();
+  const label = now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  histLabels.push(label);
+  histData.push(bpm);
+  if (histLabels.length > MAX_HISTORY) { histLabels.shift(); histData.shift(); }
+  histChart.update();
+}
+
+// Update chart colors on theme change
+function updateChartTheme(isDark) {
+  const gridColor   = isDark ? '#1a2a1a' : '#c8dac8';
+  const tickColor   = isDark ? '#4a6a4a' : '#6a8a6a';
+  const lineColor   = isDark ? '#00ff88' : '#00884a';
+  const fillColor   = isDark ? 'rgba(0,255,136,0.06)' : 'rgba(0,136,74,0.08)';
+  histChart.data.datasets[0].borderColor     = lineColor;
+  histChart.data.datasets[0].backgroundColor = fillColor;
+  histChart.options.scales.x.ticks.color = tickColor;
+  histChart.options.scales.y.ticks.color = tickColor;
+  histChart.options.scales.x.grid.color  = gridColor;
+  histChart.options.scales.y.grid.color  = gridColor;
+  histChart.update();
+}
+
+// ── Alert System ──────────────────────────────────────
+let alertDismissed = false;
+let lastStress     = '';
+
+function triggerAlert() {
+  if (alertDismissed) return;
+  document.getElementById('alertOverlay').classList.add('visible');
+  // Play a beep using Web Audio API
+  try {
+    const ac  = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.type = 'sine'; osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.3, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.8);
+    osc.start(); osc.stop(ac.currentTime + 0.8);
+  } catch(e) {}
+}
+
+document.getElementById('alertDismiss').addEventListener('click', () => {
+  document.getElementById('alertOverlay').classList.remove('visible');
+  alertDismissed = true;
+  openBreathing();
+  // Re-arm after 60 seconds
+  setTimeout(() => { alertDismissed = false; }, 60000);
+});
+
+// ── Breathing Guide ───────────────────────────────────
+const phases = [
+  { name: 'INHALE',  cls: 'inhale',  duration: 4 },
+  { name: 'HOLD',    cls: 'hold',    duration: 4 },
+  { name: 'EXHALE',  cls: 'exhale',  duration: 4 },
+  { name: 'HOLD',    cls: 'hold',    duration: 4 },
+];
+let breathPhase    = 0;
+let breathCount    = 0;
+let breathInterval = null;
+
+function openBreathing() {
+  document.getElementById('breathingPanel').classList.add('visible');
+  breathPhase = 0; breathCount = phases[0].duration;
+  runBreath();
+}
+
+function runBreath() {
+  clearInterval(breathInterval);
+  const phase = phases[breathPhase];
+  document.getElementById('breathInstruction').textContent = phase.name;
+  document.getElementById('breathCircle').className = 'breath-circle ' + phase.cls;
+  breathCount = phase.duration;
+  document.getElementById('breathCount').textContent = breathCount;
+
+  breathInterval = setInterval(() => {
+    breathCount--;
+    document.getElementById('breathCount').textContent = breathCount;
+    if (breathCount <= 0) {
+      breathPhase = (breathPhase + 1) % phases.length;
+      runBreath();
+    }
+  }, 1000);
+}
+
+document.getElementById('breathBtn').addEventListener('click', openBreathing);
+document.getElementById('breathClose').addEventListener('click', () => {
+  document.getElementById('breathingPanel').classList.remove('visible');
+  clearInterval(breathInterval);
+});
+
+// ── Dark/Light Mode ───────────────────────────────────
+let isDark = true;
+document.getElementById('themeBtn').addEventListener('click', () => {
+  isDark = !isDark;
+  document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  document.getElementById('themeBtn').textContent = isDark ? '☀ LIGHT MODE' : '☾ DARK MODE';
+  updateChartTheme(isDark);
+});
+
+// ── Fullscreen ────────────────────────────────────────
+document.getElementById('fullscreenBtn').addEventListener('click', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen();
+    document.getElementById('fullscreenBtn').textContent = '⛶ EXIT FULL';
+  } else {
+    document.exitFullscreen();
+    document.getElementById('fullscreenBtn').textContent = '⛶ FULLSCREEN';
+  }
+});
+
+// ── Live Clock ────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('liveClock').textContent = now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Session Timer ─────────────────────────────────────
+const sessionStart = Date.now();
+function updateSession() {
+  const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const ss = String(elapsed % 60).padStart(2, '0');
+  document.getElementById('sessionTimer').textContent = mm + ':' + ss;
+}
+setInterval(updateSession, 1000);
+
+// ── History push interval (every 1s) ─────────────────
+setInterval(() => { if (currentBPM > 0) pushHistory(currentBPM); }, 1000);
+
+// ── Stress descriptions ───────────────────────────────
+const stressDescriptions = {
+  'NO DATA':  'Place finger on sensor',
+  'LOW':      'Relaxed — BPM below 75',
+  'NORMAL':   'Normal range — 75 to 90 BPM',
+  'MODERATE': 'Elevated — 90 to 110 BPM',
+  'HIGH':     'High stress — BPM above 110'
+};
+
+// ── Socket Data ───────────────────────────────────────
+socket.on('sensor_data', (data) => {
+  currentBPM = data.bpm || 0;
+
+  // BPM
+  const bpmEl   = document.getElementById('bpmVal');
+  const bpmFill = document.getElementById('bpmFill');
+  if (currentBPM > 0) {
+    bpmEl.textContent = currentBPM;
+    const pct = Math.min(((currentBPM - 40) / 140) * 100, 100);
+    bpmFill.style.width = pct + '%';
+    if (currentBPM > 110) { bpmEl.style.color='var(--red)';   bpmFill.style.background='var(--red)'; }
+    else if (currentBPM > 90) { bpmEl.style.color='var(--amber)'; bpmFill.style.background='var(--amber)'; }
+    else { bpmEl.style.color='var(--green)'; bpmFill.style.background='var(--green)'; }
+  } else {
+    bpmEl.textContent = '--'; bpmFill.style.width = '0%';
+    bpmEl.style.color = 'var(--green)';
+  }
+
+  // No signal overlay
+  const noSig = document.getElementById('noSignal');
+  if (currentBPM > 0) noSig.classList.add('hidden'); else noSig.classList.remove('hidden');
+
+  // Stress
+  const stress = data.stress || 'NO DATA';
+  if (stress === 'HIGH' && lastStress !== 'HIGH') triggerAlert();
+  if (stress !== 'HIGH') alertDismissed = false;
+  lastStress = stress;
+  const key = stress.replace(' ', '-');
+  document.getElementById('stressBadge').textContent  = stress;
+  document.getElementById('stressBadge').className    = 'stress-badge stress-' + key;
+  document.getElementById('stressDesc').textContent   = stressDescriptions[stress] || '';
+
+  // Temp
+  const tempEl  = document.getElementById('tempVal');
+  const tempSub = document.getElementById('tempSub');
+  if (data.temp > 0) {
+    tempEl.textContent = data.temp.toFixed(1);
+    if (data.temp > 30) { tempEl.style.color='var(--amber)'; tempSub.textContent='ELEVATED'; }
+    else { tempEl.style.color='var(--green)'; tempSub.textContent='NORMAL'; }
+  } else { tempEl.textContent='--'; tempSub.textContent='--'; }
+
+  // Humidity
+  const humEl  = document.getElementById('humVal');
+  const humSub = document.getElementById('humSub');
+  if (data.hum > 0) {
+    humEl.textContent = data.hum;
+    if (data.hum > 70) { humEl.style.color='var(--amber)'; humSub.textContent='HIGH'; }
+    else { humEl.style.color='var(--green)'; humSub.textContent='NORMAL'; }
+  } else { humEl.textContent='--'; humSub.textContent='--'; }
+
+  // Connection
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  if (data.connected) { dot.className='dot online'; txt.textContent='CONNECTED'; }
+  else { dot.className='dot offline'; txt.textContent='DISCONNECTED'; }
+
+  // Timestamp
+  document.getElementById('timestamp').textContent = 'LAST UPDATE: ' + new Date().toLocaleTimeString();
+});
+
+socket.on('disconnect', () => {
+  document.getElementById('statusDot').className = 'dot offline';
+  document.getElementById('statusText').textContent = 'DISCONNECTED';
+});
+</script>
+</body>
+</html>
